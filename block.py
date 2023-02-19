@@ -1,64 +1,34 @@
 import numpy as np
 import cv2
+from bitarray import bitarray
 
-from utils import ZigZagOrder
-from table import QuantizationTable
+from table import QuantizationTable, HuffmanTable
+from huffman import HuffmanEncoder, HuffmanDecoder
+from bitutils import StateStream
 
 class Block(object):
-    def __init__(self, data: np.ndarray = None) -> None:
-        self.raw = data
-
-    def fdct(self) -> 'Block':
-        self.raw = cv2.dct(np.float32(self.raw))
-        return self
-
-    def idct(self) -> 'Block':
-        self.raw = cv2.idct(np.float32(self.raw))
-        return self
-
-    def dequantize(self, quantization: QuantizationTable, item_type = np.float32) -> 'Block':
-        self.raw = np.array(self.raw * quantization.table, dtype=item_type)
-        return self
+    '''
+    Codecs for each Block (8 x 8 data)
+    '''
+    def __init__(self, dc_huff: HuffmanTable, ac_huff: HuffmanTable, quant: QuantizationTable, mode = 'encode') -> None:
+        self.quant = quant
+        self.huffman = HuffmanEncoder(dc_huff, ac_huff) if mode == 'encode' else HuffmanDecoder(dc_huff, ac_huff)
     
-    def quantize(self, quantization: QuantizationTable, item_type = np.int32) -> 'Block':
-        self.raw = np.array(self.raw / quantization.table, dtype=item_type)
-        return self
-
-    def get_dc(self):
-        return int(self.raw[0, 0])
-
-    def get_copy(self, item_type = np.int32) -> np.ndarray:
-        return np.array(self.raw, dtype=item_type)
+    def encode(self, data: np.ndarray, pred_dc: int) -> tuple[bitarray, int]:
+        fdct = cv2.dct(np.float32(data))
+        quant = np.int32(fdct / self.quant.table)
+        return self.huffman.encode(quant, pred = pred_dc), int(quant[0][0])
     
-    def get_data(self) -> np.ndarray:
-        return self.raw
-        
-    def tolist_zigzag(self, item_type_converter = int) -> list:
-        '''
-        Convert 2D data (8 x 8) to 1D data (64) using zigzag order.
-        :param: [item_type_converter] Element type converter for the result.
-        '''
-        size = 8
-        result = [0] * (size * size)
-        for r in range(size):
-            for c in range(size):
-                result[ZigZagOrder[r][c]] = item_type_converter(self.raw[r][c])
-        return result
-
-    def fromlist_zigzag(self, data: list, item_type = np.int32) -> 'Block':
-        '''
-        Convert 1D data (64) to 2D data (8 x 8) using zigzag order.
-        :param: [item_type] Element type for the result.
-        '''
-        size    = 8
-        result  = [[0] * size for _ in range(size)]
-        for r in range(size):
-            for c in range(size):
-                result[r][c] = data[ZigZagOrder[r][c]]
-        self.raw = np.array(result, dtype=item_type)
-        return self
+    def decode(self, stream: StateStream, pred_dc: int) -> tuple[np.ndarray, int]:
+        dec     = self.huffman.decode(stream, pred = pred_dc)
+        dequant = np.float32(dec * self.quant.table)
+        idct    = cv2.idct(dequant)
+        return idct, int(dec[0][0])
 
 class BlockExtend(object):
+    '''
+    Block Container for Rearrange Blocks.
+    '''
     def __init__(self, step = (1, 1)) -> None:
         self.step           = step # ver x hor
         self.block_index    = 0
@@ -104,9 +74,9 @@ class BlockExtend(object):
         self.raw[indices] = data
         return self
 
-    def get_next(self) -> Block:
+    def get_next(self) -> np.ndarray:
         indices = self.move_next()
-        return Block(self.raw[indices])
+        return self.raw[indices] ### Change here
     
     def get_all(self) -> np.ndarray:
         return self.raw

@@ -23,10 +23,11 @@
 # Read next S bits to get DIFF or AC coef
 
 from bitarray import bitarray, util
+import numpy as np
+from utils import fromlist_zigzag, tolist_zigzag
 
 from bitutils import StateStream, JpegBitConverter
 from table import HuffmanTable
-from block import Block
 
 def gencode(bits: list[int]) -> list[bitarray]:
     '''
@@ -67,14 +68,14 @@ class Encoder(object):
     def __init__(self) -> None:
         pass
 
-    def encode(self, data: Block, **params) -> bitarray:
+    def encode(self, data: np.ndarray, **params) -> bitarray:
         pass
 
 class Decoder(object):
     def __init__(self) -> None:
         pass
 
-    def decode(self, stream: StateStream, **params) -> Block:
+    def decode(self, stream: StateStream, **params) -> np.ndarray:
         pass
 
 class _EncoderLookup(object):
@@ -115,9 +116,9 @@ class HuffmanEncoder(Encoder):
         self.dc_lookup = _EncoderLookup(dc_table)
         self.ac_lookup = _EncoderLookup(ac_table)
 
-    def encode(self, data: Block, **params) -> bitarray:
+    def encode(self, data: np.ndarray, **params) -> bitarray:
         pred = params['pred']
-        coefs = data.tolist_zigzag()
+        coefs = tolist_zigzag(data) # data.tolist_zigzag() ### Change here
         result = bitarray()
         ######## Encode DC ########
         diff = coefs[0] - pred
@@ -153,7 +154,7 @@ class HuffmanDecoder(Decoder):
         self.dc_lookup = _DecoderLookup(dc_table)
         self.ac_lookup = _DecoderLookup(ac_table)
     
-    def decode(self, stream: StateStream, **params) -> Block:
+    def decode(self, stream: StateStream, **params) -> np.ndarray:
         number_of_coefs     = 64
         coefs               = [0] * number_of_coefs
         pred                = params['pred']
@@ -174,4 +175,4 @@ class HuffmanDecoder(Decoder):
                 break
             k += 1
 
-        return Block(None).fromlist_zigzag(coefs)
+        return fromlist_zigzag(coefs)# Block(None).fromlist_zigzag(coefs) ### Change here

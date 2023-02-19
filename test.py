@@ -1,10 +1,24 @@
-import compare
-import sys
+import compare, sys
+
 from frame import Frame
+from utils import load_image
 
-frame = Frame()
+# Input
+quality = int(sys.argv[2])
+origin = load_image(sys.argv[1])
 
-for quality in range(0, 101, 15):
-    print(f'========== Quality {quality} ==========')
-    frame.set_quality(quality)
-    compare.compare(frame, sys.argv[1])
+compressor = Frame()
+compressor.set_quality(quality)
+
+# Compress
+encoded_data = compressor.encode(origin)
+
+# Restore
+restore = compressor.decode(encoded_data, origin.shape)
+
+# Compare
+comparer = compare.CompressorStatistic(origin, restore, len(encoded_data))
+
+print(f'========== Quality {quality} ==========')
+print(comparer)
+# comparer.show(False)

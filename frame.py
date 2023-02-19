@@ -8,6 +8,9 @@ from table import *
 import utils
 
 class Frame(object):
+    '''
+    Codecs for each Frame
+    '''
     def __init__(self, max_components: int = 3, precision: int = 8) -> None:
         # if mode.lower() != 'baseline':
         #     raise NotImplemented('Support Baseline JPEG only.')
@@ -21,21 +24,27 @@ class Frame(object):
         self.set_quantization_table([lumaquant, chromaquant])
         self.set_huffman_tables([lumahuff, chromahuff])
         self.set_interpolation('linear')
-        self.set_sampling_factor(420)
+        self.set_sampling_factor(410)
 
     def set_huffman_tables(self, tables: tuple[HuffmanTable] | list):
+        '''
+        Set Huffman Tables (DC, AC) for Components
+        '''
         comp_tables = utils.broadcast(tables, len(self.components))
         for t, comp in zip(comp_tables, self.components):
             comp.huffman_tables = t
 
     def set_quantization_table(self, table: QuantizationTable | list):
+        '''
+        Set Quantization Tables for Components
+        '''
         comp_tables = utils.broadcast(table, len(self.components))
         for t, comp in zip(comp_tables, self.components):
             comp.quantization_table = t
 
     def set_interpolation(self, name: str | list):
         '''
-        Extract sampling strategy by name. See cv2.INTER_
+        Set Sampling Strategy from name. See cv2.INTER_
         Support: 'nearest', 'linear', 'cubic', 'area', 'lanczos4', 'nearest-exact', 'linear-exact', 'max'
         '''
         name_list = ['nearest', 'linear', 'cubic', 'area', 'lanczos4', 'nearest-exact', 'linear-exact', 'max']
@@ -54,7 +63,7 @@ class Frame(object):
 
     def set_quality(self, quality: int | list):
         '''
-        Set compression quality. A relative value for the visual result of compress and restore process.
+        Set compression quality. A relative value for the visual precision of restored image.
         '''
         comp_quality = utils.broadcast(quality, len(self.components))
         for q, comp in zip(comp_quality, self.components):
@@ -62,7 +71,7 @@ class Frame(object):
 
     def set_sampling_factor(self, factor: int | str | list):
         '''
-        Extract sampling factor from format. (horizontal, vertical)
+        Set Chroma Sampling Factor from format. (horizontal, vertical)
         Support: 4:A:0 or 4:A:A and 4 is divisible by A.
         '''
         if isinstance(factor, str):
@@ -75,6 +84,9 @@ class Frame(object):
             comp.sampling_factor = t
 
     def _get_orders(self, components: list[Component]) -> list:
+        '''
+        Get component's blocks order in "interleave" encode/decode mode.
+        '''
         orders = []
         for index, comp in enumerate(components):
             orders.extend([index] * (comp.sampling_factor[0] * comp.sampling_factor[1]))
@@ -87,27 +99,30 @@ class Frame(object):
                 r[i] = max(r[i], comp.sampling_factor[i])
         return r
 
-    def encode(self, data: np.ndarray, *, mode: str = 'non-interleave') -> bitarray:
-        ### Color space convert ###
+    def encode(self, data: np.ndarray, *, mode: str = 'non-interleave') -> bytes:
+        '''
+        Encode image data to byte array
+        '''
+        ### Color space convert -> Divide Components ###
         image_type         = 'color' if (len(data.shape) == 3 and data.shape[2] == 3) else 'grey'
         if image_type == 'color':
             ycrcb = cv2.cvtColor(data, cv2.COLOR_BGR2YCrCb)
             component_data  = cv2.split(ycrcb)
             components      = self.components[:3]
         else: # grey
-            component_data  = data
+            component_data  = (data,)
             components      = self.components[:1]
             mode            = 'non-interleave'
-
+        
         max_sfactor = self._get_max_sampling_factor(components)
 
-        ### Preencode (downsampling, expand) -> Level Shift ###
+        ### Downsampling, Padding -> Level Shift ###
         encode_generators = []
         for component, data in zip(components, component_data):
             pre_data            = component.preencode(data, max_sfactor, mode)
             ### Level Shift ###
             ls = np.array(pre_data, dtype=np.int32) - (1 << (self.precision - 1))
-            encode_generators.append(component.encode(ls, mode))
+            encode_generators.append(component.encode(ls, mode)) # append a encode generator
 
         ### Encode ###
         result = bitarray()
@@ -126,7 +141,10 @@ class Frame(object):
 
         return result.tobytes()
 
-    def decode(self, data: bytes, image_shape, *, mode: str = 'non-interleave') -> np.ndarray:
+    def decode(self, data: bytes, image_shape: tuple, *, mode: str = 'non-interleave') -> np.ndarray:
+        '''
+        Decode byte array into image data
+        '''
         image_type         = 'color' if (len(image_shape) == 3 and image_shape[2] == 3) else 'grey'
         if image_type == 'color':
             components      = self.components[:3]
@@ -144,7 +162,7 @@ class Frame(object):
         builders = []
         for component in components:
             decode_generators.append(component.decode(stream))
-            builders.append(component.create_block_builder(component_shape, max_sfactor, mode))
+            builders.append(component.create_block_container(component_shape, max_sfactor, mode))
         
         if mode == 'non-interleave':
             for gen, builder in zip(decode_generators, builders):
@@ -156,7 +174,7 @@ class Frame(object):
                 for index in orders:
                     builders[index].put_next(next(decode_generators[index]))
 
-        ### Level Shift -> Postdecode (crop, upsampling) -> Merge -> Convert Color ###
+        ### Level Shift -> Crop, Upsampling -> Merge -> Convert Color ###
         component_data = []
         for index, comp in enumerate(components):
             decoded     = builders[index].get_all()
@@ -168,4 +186,4 @@ class Frame(object):
             merged = cv2.merge(component_data)
             return cv2.cvtColor(merged, cv2.COLOR_YCrCb2BGR)
         else:
-            return np.array(component_data, dtype=np.uint8)
+            return np.uint8(component_data[0])
