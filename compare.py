@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-class CompressorStatistic(object):
+class CompressorAnalysis(object):
     '''
     Compare between original image with its compressed image.
     '''

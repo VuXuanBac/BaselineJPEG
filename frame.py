@@ -24,7 +24,7 @@ class Frame(object):
         self.set_quantization_table([lumaquant, chromaquant])
         self.set_huffman_tables([lumahuff, chromahuff])
         self.set_interpolation('linear')
-        self.set_sampling_factor(410)
+        self.set_sampling_factor(420)
 
     def set_huffman_tables(self, tables: tuple[HuffmanTable] | list):
         '''

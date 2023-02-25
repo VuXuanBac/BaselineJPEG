@@ -17,8 +17,8 @@ encoded_data = compressor.encode(origin)
 restore = compressor.decode(encoded_data, origin.shape)
 
 # Compare
-comparer = compare.CompressorStatistic(origin, restore, len(encoded_data))
+comparer = compare.CompressorAnalysis(origin, restore, len(encoded_data))
 
 print(f'========== Quality {quality} ==========')
 print(comparer)
-# comparer.show(False)
+comparer.show(False)

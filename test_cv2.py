@@ -12,8 +12,8 @@ restore = cv2.imread('test-cv2.jpg')
 encoded_len = reader.get_ecs_length('test-cv2.jpg')
 
 # Compare
-comparer = compare.CompressorStatistic(origin, restore, encoded_len)
+comparer = compare.CompressorAnalysis(origin, restore, encoded_len)
 
 print(f'========== Quality {quality} ==========')
 print(comparer)
-# comparer.show(False)
+comparer.show(False)
